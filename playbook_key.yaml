@@ -1,0 +1,101 @@
+---
+- hosts: all
+  become: True
+  become_user: root
+
+  tasks:
+  - name: lookup localuser
+    become: false
+    local_action: command whoami
+    register: local_user
+    tags: ['without_sudo', 'sudo', 'delete']
+
+  - name: find pub keys
+    delegate_to: localhost
+    become_user: "{{ local_user.stdout }}"
+    find:
+      paths: "{{ playbook_dir+'/keys' }}"
+      file_type: "file"
+    register: find_result
+    tags: ['without_sudo', 'sudo', 'delete']
+
+  - name: find logins
+    set_fact:
+      logins: "{{ logins|default({}) | combine( {item.path | basename:item.path} ) }}"
+    loop: "{{ find_result.files }}"
+    tags: ['without_sudo', 'sudo', 'delete']
+
+  - name: (SYS_CREATE) Creating system user
+    user:
+      name: "{{ item[0] }}"
+    become: yes
+    loop: "{{ logins.items() | list }}"
+    register: users
+    tags: ['without_sudo', 'sudo']
+#    no_log: True
+
+  - name: (SYS_CREATE) Get all users from passwd
+    become: yes
+    shell:
+      cmd: cat /etc/passwd
+    register: all_users
+    tags: ['without_sudo', 'sudo']
+
+  - name: (SYS_SUDO) Check system users
+    debug:
+      var: users
+      verbosity: 1
+    tags: ['without_sudo', 'sudo']
+
+  - name: (SYS_SUDO) Make sure we have a 'wheel' group
+    group:
+      name: wheel
+      state: present
+    tags: ['sudo']
+
+  - name: (SYS_SUDO) Allow 'wheel' group to have passwordless sudo
+    lineinfile:
+      dest: /etc/sudoers
+      state: present
+      regexp: "^%{{ item[0] }}"
+      line: "{{ item.name }} ALL=(ALL) NOPASSWD: ALL"
+      validate: 'visudo -cf %s'
+    become: yes
+    loop: "{{ logins.values() | list }}"
+    tags: ['sudo']
+#    no_log: True
+
+  - name: (SYS_SUDO) Add sudoers users to wheel group
+    user:
+      name: "{{ item[0] }}"
+      groups: "wheel"
+      append: yes
+      state: present
+      createhome: yes
+    become: yes
+    loop: "{{ logins.values() | list }}"
+    tags: ['sudo']
+#    no_log: True
+
+  - name: add ssh pub key
+    authorized_key:
+      user: "{{ item[0] }}"
+      key: "{{ lookup('file', '{{ item[1] }}') }}"
+      state: present
+      exclusive: False
+    loop: "{{ logins.items() | list }}"
+    tags: ['without_sudo', 'sudo']
+
+  - name: Show all the hosts matching the pattern, ie all but the group www
+    debug:
+      msg: "{{ item[0] }}"
+    loop: "{{ logins.items() | list }}"
+    tags: ['delete']
+
+  - name: Remove user
+    user:
+      name: "{{ item[0] }}"
+      state: absent
+      remove: no
+    loop: "{{ logins.items() | list }}"
+    tags: ['delete']

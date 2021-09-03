@@ -1,0 +1,4 @@
+---
+system_users:
+  - name: "tmp_name"
+    password: "tmp_pass"

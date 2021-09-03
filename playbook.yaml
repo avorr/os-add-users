@@ -1,0 +1,66 @@
+---
+- hosts: all
+  become: True
+  become_user: root
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+  - name: (SYS_CREATE) Creating system user {{ item.name }}"
+    user:
+      name: "{{ item.name }}"
+      password: "{{ item.password | password_hash('sha512') }}"
+      update_password: always
+    become: yes
+    with_items:
+      - "{{ system_users }}"
+    register: users
+    tags: ['without_sudo', 'sudo']
+    no_log: True
+
+  - name: (SYS_CREATE) Get all users from passwd
+    become: yes
+    shell:
+      cmd: cat /etc/passwd
+    register: all_users
+    tags: ['without_sudo', 'sudo']
+
+  - name: (SYS_SUDO) Check system users
+    debug:
+      var: users
+      verbosity: 1
+    tags: ['without_sudo', 'sudo']
+
+
+  - name: (SYS_SUDO) Make sure we have a 'wheel' group
+    group:
+      name: wheel
+      state: present
+    tags: ['sudo']
+    
+  - name: (SYS_SUDO) Allow 'wheel' group to have passwordless sudo
+    lineinfile:
+      dest: /etc/sudoers
+      state: present
+      regexp: "^%{{ item.name }}"
+      line: "{{ item.name }} ALL=(ALL) NOPASSWD: ALL"
+      validate: 'visudo -cf %s'
+    become: yes
+    with_items:
+      - "{{ system_users }}"
+    tags: ['sudo']
+    no_log: True
+
+  - name: (SYS_SUDO) Add sudoers users to wheel group
+    user:
+      name: "{{ item.name }}"
+      groups: "wheel"
+      append: yes
+      state: present
+      createhome: yes
+    become: yes
+    with_items:
+      - "{{ system_users }}"
+    tags: ['sudo']
+    no_log: True

@@ -1,0 +1,6 @@
+all:
+  hosts:
+    ex_host:
+      ansible_host: ex-host.domain.novalocal
+      ansible_user: 'user'
+      ansible_ssh_port: "9022"

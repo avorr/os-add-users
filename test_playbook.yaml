@@ -1,0 +1,8 @@
+---
+- hosts: all
+  become: True
+  become_user: root
+
+  tasks:
+  - name: ping
+    ping:
